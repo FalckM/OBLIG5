@@ -44,11 +44,59 @@ def svar():
     barnehager = select_alle_barnehager()  # Henter alle barnehagedata
     return render_template('svar.html', data=information, barnehager=barnehager)
 
+
 @app.route('/commit')
 def commit():
-    commit_all()
-    return render_template('commit.html')
+    # Henter all data fra databasen (kgdata.xlsx) som er lastet inn i DataFrames
+    foresatt_data = forelder.to_dict(orient='records')
+    barn_data = barn.to_dict(orient='records')
+    barnehage_data = barnehage.to_dict(orient='records')  # Konverterer barnehage DataFrame til dict
 
+    # Henter søknader og kobler navn, personnummer, fortrinnsrett og status
+    soknader_med_info = []
+    for s in soknad.to_dict(orient='records'):
+        # Hent navnene til foresatte
+        foresatt_1_info = forelder.loc[forelder['foresatt_id'] == s['foresatt_1']]
+        foresatt_1_navn = foresatt_1_info.iloc[0]['foresatt_navn'] if not foresatt_1_info.empty else "Ukjent"
+
+        foresatt_2_info = forelder.loc[forelder['foresatt_id'] == s['foresatt_2']]
+        foresatt_2_navn = foresatt_2_info.iloc[0]['foresatt_navn'] if not foresatt_2_info.empty else "Ukjent"
+
+        # Hent personnummeret til barnet
+        barn_info = barn.loc[barn['barn_id'] == s['barn_1']]
+        barn_pnr = barn_info.iloc[0]['barn_pnr'] if not barn_info.empty else "Ukjent"
+
+        # Sjekk fortrinnsrett
+        har_fortrinnsrett = s['fr_barnevern'] == 'on' or s['fr_sykd_familie'] == 'on' or s['fr_sykd_barn'] == 'on'
+
+        # Bestem status (TILBUD eller AVSLAG)
+        status = "AVSLAG"
+        barnehager_prioritert = str(s['barnehager_prioritert'])
+        prioriterte_barnehager = [int(b_id) for b_id in barnehager_prioritert.split(',') if b_id.isdigit()]
+
+        # Sjekk om noen av de prioriterte barnehagene har ledige plasser eller fortrinnsrett
+        for b_id in prioriterte_barnehager:
+            barnehage_data_row = barnehage.loc[barnehage['barnehage_id'] == b_id]
+            if not barnehage_data_row.empty:
+                ledige_plasser = barnehage_data_row.iloc[0]['barnehage_ledige_plasser']
+                if har_fortrinnsrett or ledige_plasser > 0:
+                    status = "TILBUD"
+                    break
+
+        soknader_med_info.append({
+            'sok_id': s['sok_id'],
+            'foresatt_1_navn': foresatt_1_navn,
+            'foresatt_2_navn': foresatt_2_navn,
+            'barn_pnr': barn_pnr,
+            'fortrinnsrett': "Ja" if har_fortrinnsrett else "Nei",
+            'status': status
+        })
+
+    return render_template('commit.html', 
+                           foresatt_data=foresatt_data,
+                           barn_data=barn_data,
+                           barnehage_data=barnehage_data,
+                           soknad_data=soknader_med_info)
 
 @app.route('/soknader')
 def soknader():

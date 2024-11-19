@@ -1,5 +1,79 @@
 {% extends 'base.html' %}
-
 {% block content %}
-<p>Alle endringene er skrevet til dbexcel!</p>
+<h2>All Data fra Databasen</h2>
+
+<h3>Foresatte</h3>
+<table border="1">
+    <tr>
+        <th>Foresatt ID</th>
+        <th>Navn</th>
+        <th>Adresse</th>
+        <th>Telefonnummer</th>
+        <th>Personnummer</th>
+    </tr>
+    {% for f in foresatt_data %}
+    <tr>
+        <td>{{ f.foresatt_id }}</td>
+        <td>{{ f.foresatt_navn }}</td>
+        <td>{{ f.foresatt_adresse }}</td>
+        <td>{{ f.foresatt_tlfnr }}</td>
+        <td>{{ f.foresatt_pnr }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+<h3>Barn</h3>
+<table border="1">
+    <tr>
+        <th>Barn ID</th>
+        <th>Personnummer</th>
+    </tr>
+    {% for b in barn_data %}
+    <tr>
+        <td>{{ b.barn_id }}</td>
+        <td>{{ b.barn_pnr }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+<h3>Barnehager</h3>
+<table border="1">
+    <tr>
+        <th>Barnehage ID</th>
+        <th>Navn</th>
+        <th>Antall Plasser</th>
+        <th>Ledige Plasser</th>
+    </tr>
+    {% for bh in barnehage_data %}
+    <tr>
+        <td>{{ bh.barnehage_id }}</td>
+        <td>{{ bh.barnehage_navn }}</td>
+        <td>{{ bh.barnehage_antall_plasser }}</td>
+        <td>{{ bh.barnehage_ledige_plasser }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+<h3>Søknader</h3>
+<table border="1">
+    <tr>
+        <th>Søknads-ID</th>
+        <th>Navn på Foresatt 1</th>
+        <th>Navn på Foresatt 2</th>
+        <th>Personnummer på Barn</th>
+        <th>Fortrinnsrett</th>
+        <th>Status</th>
+    </tr>
+    {% for s in soknad_data %}
+    <tr>
+        <td>{{ s.sok_id }}</td>
+        <td>{{ s.foresatt_1_navn }}</td>
+        <td>{{ s.foresatt_2_navn }}</td>
+        <td>{{ s.barn_pnr }}</td>
+        <td>{{ s.fortrinnsrett }}</td>
+        <td>{{ s.status }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
 {% endblock %}
