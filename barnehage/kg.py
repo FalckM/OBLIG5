@@ -23,18 +23,25 @@ def barnehager():
 def behandle():
     if request.method == 'POST':
         sd = request.form
-        print(sd)
-        log = insert_soknad(form_to_object_soknad(sd))
-        print(log)
+        soknad_obj = form_to_object_soknad(sd)  # Konverterer skjemaet til et Soknad-objekt
+        tilbudt_plass = insert_soknad(soknad_obj)  # Prøver å sette inn søknaden
+
+        # Lagre informasjon om hvorvidt plassen ble tilbudt i session
         session['information'] = sd
-        return redirect(url_for('svar')) #[1]
-    else:
-        return render_template('soknad.html')
+        session['tilbudt_plass'] = tilbudt_plass
+
+        return redirect(url_for('svar'))
+
+    # Hvis metoden er GET, returner skjemaet
+    return render_template('soknad.html')
+
+
 
 @app.route('/svar')
 def svar():
     information = session['information']
-    return render_template('svar.html', data=information)
+    barnehager = select_alle_barnehager()  # Henter alle barnehagedata
+    return render_template('svar.html', data=information, barnehager=barnehager)
 
 @app.route('/commit')
 def commit():

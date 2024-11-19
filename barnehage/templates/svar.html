@@ -1,12 +1,11 @@
 {% extends 'base.html' %}
-<!-- Skriv inn din kode her for å returnere svar for bruksscenario om svar på en søknad. --> 
 {% block content %}
-<table border=1>
-	{% for k,v in data.items() %}
-	<tr>
-		<th>{{ k }}</th>
-		<td>{{ v }}</td>
-	</tr>
-	{% endfor %}
-</table>
+<h2>Svar på Søknaden</h2>
+
+{% if session['tilbudt_plass'] %}
+    <p>Gratulerer! Du har fått plass i en av de prioriterte barnehagene.</p>
+{% else %}
+    <p>Beklager, vi har ikke ledige plasser i de prioriterte barnehagene for øyeblikket.</p>
+{% endif %}
+
 {% endblock %}

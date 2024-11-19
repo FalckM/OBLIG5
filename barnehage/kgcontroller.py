@@ -56,46 +56,45 @@ def insert_barn(b):
     return barn
 
 def insert_soknad(s):
-    """[sok_id, foresatt_1, foresatt_2, barn_1, fr_barnevern, fr_sykd_familie,
-    fr_sykd_barn, fr_annet, barnehager_prioritert, sosken__i_barnehagen,
-    tidspunkt_oppstart, brutto_inntekt]
-    """
-    global soknad
-    new_id = 0
-    if soknad.empty:
-        new_id = 1
-    else:
-        new_id = soknad['sok_id'].max() + 1
-    
-    
-    # burde også sjekke for duplikater
-    
-    soknad = pd.concat([pd.DataFrame([[new_id,
-                                     s.foresatt_1.foresatt_id,
-                                     s.foresatt_2.foresatt_id,
-                                     s.barn_1.barn_id,
-                                     s.fr_barnevern,
-                                     s.fr_sykd_familie,
-                                     s.fr_sykd_barn,
-                                     s.fr_annet,
-                                     s.barnehager_prioritert,
-                                     s.sosken__i_barnehagen,
-                                     s.tidspunkt_oppstart,
-                                     s.brutto_inntekt]],
-                columns=soknad.columns), soknad], ignore_index=True)
-    
-    return soknad
+    global soknad, barnehage
+    new_id = soknad['sok_id'].max() + 1 if not soknad.empty else 1
+
+    # Hent listen over prioriterte barnehager
+    prioriterte_barnehager = [int(b_id) for b_id in s.barnehager_prioritert.split(',') if b_id.isdigit()]
+
+    # Finn en barnehage med ledige plasser eller prioriter de med fortrinnsrett
+    valgt_barnehage = None
+    for b_id in prioriterte_barnehager:
+        barnehage_data = barnehage.loc[barnehage['barnehage_id'] == b_id]
+        if not barnehage_data.empty:
+            ledige_plasser = barnehage_data.iloc[0]['barnehage_ledige_plasser']
+            if s.fr_barnevern or s.fr_sykd_familie or s.fr_sykd_barn or ledige_plasser > 0:
+                valgt_barnehage = b_id
+                if ledige_plasser > 0:
+                    # Reduser antall ledige plasser
+                    barnehage.loc[barnehage['barnehage_id'] == b_id, 'barnehage_ledige_plasser'] -= 1
+                break
+
+    # Hvis en barnehage er funnet, sett tilbudt_plass til True
+    tilbudt_plass = valgt_barnehage is not None
+
+    # Lagre søknaden i soknad DataFrame
+    soknad = pd.concat([pd.DataFrame([[new_id, s.foresatt_1.foresatt_id, s.foresatt_2.foresatt_id, s.barn_1.barn_id, s.fr_barnevern, s.fr_sykd_familie, s.fr_sykd_barn, s.fr_annet, s.barnehager_prioritert, s.sosken__i_barnehagen, s.tidspunkt_oppstart, s.brutto_inntekt]], columns=soknad.columns), soknad], ignore_index=True)
+
+    return tilbudt_plass
+
 
 # ---------------------------
 # Read (select)
 
 def select_alle_barnehager():
     """Returnerer en liste med alle barnehager definert i databasen dbexcel."""
-    return barnehage.apply(lambda r: Barnehage(r['barnehage_id'],
-                             r['barnehage_navn'],
-                             r['barnehage_antall_plasser'],
-                             r['barnehage_ledige_plasser']),
-         axis=1).to_list()
+    return barnehage.apply(lambda r: Barnehage(
+        r['barnehage_id'],
+        r['barnehage_navn'],
+        r['barnehage_antall_plasser'],
+        r['barnehage_ledige_plasser']
+    ), axis=1).to_list()
 
 def select_foresatt(f_navn):
     """OBS! Ignorerer duplikater"""
