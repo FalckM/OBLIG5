@@ -7,9 +7,62 @@ from flask import session
 from kgmodel import (Foresatt, Barn, Soknad, Barnehage)
 from kgcontroller import (form_to_object_soknad, insert_soknad, commit_all, select_alle_barnehager)
 from dbexcel import soknad, barnehage, barn, forelder
+import pandas as pd
+import altair as alt
+import json
 
 app = Flask(__name__)
 app.secret_key = 'BAD_SECRET_KEY' # nødvendig for session
+
+# Les inn data fra Excel-filen
+kgdata = pd.read_excel("ssb-barnehager-2015-2023-alder-1-2-aar.xlsm", sheet_name="KOSandel120000", header=3,
+                       names=['kom','y15','y16','y17','y18','y19','y20','y21','y22','y23'],
+                       na_values=['.', '..'])
+
+# Rens data (bruker koden du har fra Oppgave2.py)
+for coln in ['y15','y16','y17','y18','y19','y20','y21','y22','y23']:
+    kgdata.loc[kgdata[coln] > 100, coln] = float("nan")
+
+kgdata.loc[724:779, 'kom'] = "NaN"
+kgdata["kom"] = kgdata['kom'].str.split(" ").apply(lambda x: x[1] if len(x) > 1 else "")
+kgdata_no_meta = kgdata.drop(kgdata.index[724:])
+
+# Lag en liste over unike kommuner
+unike_kommuner = kgdata_no_meta['kom'].unique()
+
+@app.route('/statistikk', methods=['GET', 'POST'])
+def statistikk():
+    valgt_kommune = None
+    chart_html = None
+
+    if request.method == 'POST':
+        valgt_kommune = request.form['kommune']
+        kommune_data = kgdata_no_meta[kgdata_no_meta['kom'] == valgt_kommune]
+
+        if not kommune_data.empty:
+            kommune_data_melted = kommune_data.melt(
+                id_vars='kom',
+                value_vars=['y15', 'y16', 'y17', 'y18', 'y19', 'y20', 'y21', 'y22', 'y23'],
+                var_name='År',
+                value_name='Prosent'
+            )
+            kommune_data_melted['År'] = kommune_data_melted['År'].str.replace('y', '20')
+
+            chart = alt.Chart(kommune_data_melted).mark_line(point=True).encode(
+                x=alt.X('År:N', title='År'),
+                y=alt.Y('Prosent:Q', title='Prosentandel'),
+                tooltip=['År', 'Prosent']
+            ).properties(
+                title=f'Prosent barn i ett- og to-årsalderen i barnehagen (2015-2023) for {valgt_kommune}',
+                width=800,
+                height=400
+            )
+
+            # Konverter grafen til JSON for Altair
+            chart_html = json.dumps(chart.to_dict())
+
+    return render_template('statistikk.html', kommuner=unike_kommuner, valgt_kommune=valgt_kommune, chart_html=chart_html)
+
 
 @app.route('/')
 def index():

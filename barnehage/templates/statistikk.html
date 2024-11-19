@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Statistikk over barn i barnehagen (1-2 år)</h2>
+
+<form method="post">
+    <label for="kommune">Velg en kommune:</label>
+    <select id="kommune" name="kommune" required>
+        {% for kommune in kommuner %}
+            <option value="{{ kommune }}" {% if kommune == valgt_kommune %}selected{% endif %}>
+                {{ kommune }}
+            </option>
+        {% endfor %}
+    </select>
+    <button type="submit">Vis statistikk</button>
+</form>
+
+{% if valgt_kommune %}
+    <h3>Statistikk for {{ valgt_kommune }}</h3>
+    <div id="chart"></div>
+    <script type="text/javascript">
+        var chart_data = {{ chart_html | safe }};
+        vegaEmbed('#chart', chart_data).catch(console.error);
+    </script>
+{% endif %}
+{% endblock %}
