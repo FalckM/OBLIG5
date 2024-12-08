@@ -6,7 +6,7 @@ from flask import redirect
 from flask import session
 from kgmodel import (Foresatt, Barn, Soknad, Barnehage)
 from kgcontroller import (form_to_object_soknad, insert_soknad, commit_all, select_alle_barnehager)
-from dbexcel import soknad, barnehage, barn, forelder
+import dbexcel as db
 import pandas as pd
 import altair as alt
 import json
@@ -19,7 +19,7 @@ kgdata = pd.read_excel("ssb-barnehager-2015-2023-alder-1-2-aar.xlsm", sheet_name
                        names=['kom','y15','y16','y17','y18','y19','y20','y21','y22','y23'],
                        na_values=['.', '..'])
 
-# Rens data (bruker koden du har fra Oppgave2.py)
+# Rens data (bruker koden fra Oppgave2.py)
 for coln in ['y15','y16','y17','y18','y19','y20','y21','y22','y23']:
     kgdata.loc[kgdata[coln] > 100, coln] = float("nan")
 
@@ -32,14 +32,36 @@ unike_kommuner = kgdata_no_meta['kom'].unique()
 
 @app.route('/statistikk', methods=['GET', 'POST'])
 def statistikk():
+    import altair as alt
+    import pandas as pd
+
+    # Les data fra Excel-filen
+    kgdata = pd.read_excel("ssb-barnehager-2015-2023-alder-1-2-aar.xlsm", sheet_name="KOSandel120000",
+                           header=3,
+                           names=['kom', 'y15', 'y16', 'y17', 'y18', 'y19', 'y20', 'y21', 'y22', 'y23'],
+                           na_values=['.', '..'])
+
+    # Fjern metadata og rens dataene i kolonnen 'kom'
+    kgdata["kom"] = kgdata["kom"].fillna("")  # Fyll NaN-verdier med tom streng
+    kgdata["kom"] = kgdata["kom"].str.split(" ").apply(lambda x: x[1] if len(x) > 1 else "")
+    kgdata_clean = kgdata.dropna(subset=['y15', 'y16', 'y17', 'y18', 'y19', 'y20', 'y21', 'y22', 'y23']).copy()
+
+    # Lag en liste over kommuner for dropdown-menyen
+    kommuner = kgdata_clean["kom"].unique().tolist()
+
+    # Håndter valgt kommune
     valgt_kommune = None
-    chart_html = None
-
+    chart_json = None
     if request.method == 'POST':
-        valgt_kommune = request.form['kommune']
-        kommune_data = kgdata_no_meta[kgdata_no_meta['kom'] == valgt_kommune]
+        valgt_kommune = request.form.get('kommune', None)
 
-        if not kommune_data.empty:
+        if valgt_kommune:
+            # Filtrer data for valgt kommune
+            kommune_data = kgdata_clean[kgdata_clean['kom'] == valgt_kommune]
+
+            if kommune_data.empty:
+                return render_template('statistikk.html', kommuner=kommuner, error=f"Kommune '{valgt_kommune}' finnes ikke i dataene.")
+
             kommune_data_melted = kommune_data.melt(
                 id_vars='kom',
                 value_vars=['y15', 'y16', 'y17', 'y18', 'y19', 'y20', 'y21', 'y22', 'y23'],
@@ -48,7 +70,8 @@ def statistikk():
             )
             kommune_data_melted['År'] = kommune_data_melted['År'].str.replace('y', '20')
 
-            chart = alt.Chart(kommune_data_melted).mark_line(point=True).encode(
+            # Lag stolpediagram for valgt kommune
+            chart = alt.Chart(kommune_data_melted).mark_bar().encode(
                 x=alt.X('År:N', title='År'),
                 y=alt.Y('Prosent:Q', title='Prosentandel'),
                 tooltip=['År', 'Prosent']
@@ -58,11 +81,29 @@ def statistikk():
                 height=400
             )
 
-            # Konverter grafen til JSON for Altair
-            chart_html = json.dumps(chart.to_dict())
+            # Konverter grafen til JSON
+            chart_json = chart.to_json()
 
-    return render_template('statistikk.html', kommuner=unike_kommuner, valgt_kommune=valgt_kommune, chart_html=chart_html)
+    # Hvis ingen kommune er valgt, vis topp-10 kommuner
+    if not valgt_kommune:
+        kgdata_clean['average_2015_2023'] = kgdata_clean[['y15', 'y16', 'y17', 'y18', 'y19', 'y20', 'y21', 'y22', 'y23']].mean(axis=1).round(1)
+        top_10_kommuner = kgdata_clean.nlargest(10, 'average_2015_2023')
 
+        # Lag stolpediagram for topp-10 kommuner
+        chart = alt.Chart(top_10_kommuner).mark_bar().encode(
+            x=alt.X('kom:N', title='Kommune', sort='-y'),
+            y=alt.Y('average_2015_2023:Q', title='Gjennomsnittlig prosentandel (2015-2023)'),
+            tooltip=['kom', 'average_2015_2023']
+        ).properties(
+            title='De 10 kommunene med høyest gjennomsnittlig prosentandel (2015-2023)',
+            width=800,
+            height=400
+        )
+
+        # Konverter grafen til JSON
+        chart_json = chart.to_json()
+
+    return render_template('statistikk.html', kommuner=kommuner, chart_json=chart_json, valgt_kommune=valgt_kommune)
 
 @app.route('/')
 def index():
@@ -80,15 +121,31 @@ def behandle():
         soknad_obj = form_to_object_soknad(sd)  # Konverterer skjemaet til et Soknad-objekt
         tilbudt_plass = insert_soknad(soknad_obj)  # Prøver å sette inn søknaden
 
-        # Lagre informasjon om hvorvidt plassen ble tilbudt i session
+        # Hent data om prioriterte barnehager
+        prioriterte_barnehager = soknad_obj.barnehager_prioritert.split(',')
+        sokte_barnehager = []
+        for b_id in prioriterte_barnehager:
+            barnehage_data = db.barnehage.loc[db.barnehage['barnehage_id'] == int(b_id)]
+            if not barnehage_data.empty:
+                sokte_barnehager.append(barnehage_data.iloc[0]['barnehage_navn'])
+
+        # Lagre informasjon i session
         session['information'] = sd
         session['tilbudt_plass'] = tilbudt_plass
+
+        if tilbudt_plass:
+            valgt_barnehage = db.barnehage.loc[db.barnehage['barnehage_id'] == int(prioriterte_barnehager[0])]
+            session['barnehage_navn'] = valgt_barnehage.iloc[0]['barnehage_navn']
+            session['barnehage_adresse'] = "Ukjent Adresse"  # Oppdater dette hvis du har data
+            session['barnehage_telefon'] = "123 456 789"  # Oppdater dette hvis du har data
+            session['barnehage_epost'] = "kontakt@barnehage.no"  # Oppdater dette hvis du har data
+        else:
+            session['sokte_barnehager'] = sokte_barnehager
 
         return redirect(url_for('svar'))
 
     # Hvis metoden er GET, returner skjemaet
     return render_template('soknad.html')
-
 
 
 @app.route('/svar')
@@ -100,105 +157,113 @@ def svar():
 
 @app.route('/commit')
 def commit():
-    # Henter all data fra databasen (kgdata.xlsx) som er lastet inn i DataFrames
-    foresatt_data = forelder.to_dict(orient='records')
-    barn_data = barn.to_dict(orient='records')
-    barnehage_data = barnehage.to_dict(orient='records')  # Konverterer barnehage DataFrame til dict
+    commit_all()
 
-    # Henter søknader og kobler navn, personnummer, fortrinnsrett og status
-    soknader_med_info = []
-    for s in soknad.to_dict(orient='records'):
-        # Hent navnene til foresatte
-        foresatt_1_info = forelder.loc[forelder['foresatt_id'] == s['foresatt_1']]
-        foresatt_1_navn = foresatt_1_info.iloc[0]['foresatt_navn'] if not foresatt_1_info.empty else "Ukjent"
+    try:
+        forelder = pd.read_excel('kgdata.xlsx', sheet_name='foresatt', usecols=lambda x: 'Unnamed' not in x)
+        barn = pd.read_excel('kgdata.xlsx', sheet_name='barn', usecols=lambda x: 'Unnamed' not in x)
+        barnehage = pd.read_excel('kgdata.xlsx', sheet_name='barnehage', usecols=lambda x: 'Unnamed' not in x)
+        soknad = pd.read_excel('kgdata.xlsx', sheet_name='soknad', usecols=lambda x: 'Unnamed' not in x)
+    except Exception as e:
+        return f"En feil oppstod under lasting av data fra Excel: {e}", 500
 
-        foresatt_2_info = forelder.loc[forelder['foresatt_id'] == s['foresatt_2']]
-        foresatt_2_navn = foresatt_2_info.iloc[0]['foresatt_navn'] if not foresatt_2_info.empty else "Ukjent"
+    soknader_med_data = []
+    for _, row in soknad.iterrows():
+        foresatt_1 = forelder.loc[forelder['foresatt_id'] == row['foresatt_1']]
+        foresatt_2 = forelder.loc[forelder['foresatt_id'] == row['foresatt_2']]
+        barn_data = barn.loc[barn['barn_id'] == row['barn_1']]
 
-        # Hent personnummeret til barnet
-        barn_info = barn.loc[barn['barn_id'] == s['barn_1']]
-        barn_pnr = barn_info.iloc[0]['barn_pnr'] if not barn_info.empty else "Ukjent"
+        har_fortrinnsrett = row['fr_barnevern'] == 'on' or row['fr_sykd_familie'] == 'on' or row['fr_sykd_barn'] == 'on'
 
-        # Sjekk fortrinnsrett
-        har_fortrinnsrett = s['fr_barnevern'] == 'on' or s['fr_sykd_familie'] == 'on' or s['fr_sykd_barn'] == 'on'
-
-        # Bestem status (TILBUD eller AVSLAG)
+        # Sjekk prioriterte barnehager og finn første med ledig plass
         status = "AVSLAG"
-        barnehager_prioritert = str(s['barnehager_prioritert'])
-        prioriterte_barnehager = [int(b_id) for b_id in barnehager_prioritert.split(',') if b_id.isdigit()]
+        tilbudt_barnehage = None
+        prioriterte_barnehager = str(row['barnehager_prioritert']).split(',')
+        for barnehage_id in prioriterte_barnehager:
+            if barnehage_id.isdigit():
+                barnehage_id = int(barnehage_id)
+                barnehage_data = barnehage.loc[barnehage['barnehage_id'] == barnehage_id]
+                if not barnehage_data.empty:
+                    ledige_plasser = barnehage_data.iloc[0]['barnehage_ledige_plasser']
+                    if har_fortrinnsrett or ledige_plasser > 0:
+                        status = "TILBUD"
+                        tilbudt_barnehage = barnehage_data.iloc[0]['barnehage_navn']
+                        break
 
-        # Sjekk om noen av de prioriterte barnehagene har ledige plasser eller fortrinnsrett
-        for b_id in prioriterte_barnehager:
-            barnehage_data_row = barnehage.loc[barnehage['barnehage_id'] == b_id]
-            if not barnehage_data_row.empty:
-                ledige_plasser = barnehage_data_row.iloc[0]['barnehage_ledige_plasser']
-                if har_fortrinnsrett or ledige_plasser > 0:
-                    status = "TILBUD"
-                    break
-
-        soknader_med_info.append({
-            'sok_id': s['sok_id'],
-            'foresatt_1_navn': foresatt_1_navn,
-            'foresatt_2_navn': foresatt_2_navn,
-            'barn_pnr': barn_pnr,
-            'fortrinnsrett': "Ja" if har_fortrinnsrett else "Nei",
-            'status': status
+        soknader_med_data.append({
+            'sok_id': row['sok_id'],
+            'foresatt_1': foresatt_1['foresatt_navn'].values[0] if not foresatt_1.empty else 'Ukjent',
+            'foresatt_2': foresatt_2['foresatt_navn'].values[0] if not foresatt_2.empty else 'Ukjent',
+            'barn_1': barn_data['barn_pnr'].values[0] if not barn_data.empty else 'Ukjent',
+            'fr_barnevern': row['fr_barnevern'],
+            'fr_sykd_familie': row['fr_sykd_familie'],
+            'fr_sykd_barn': row['fr_sykd_barn'],
+            'fr_annet': row['fr_annet'],
+            'status': status,
+            'tilbudt_barnehage': tilbudt_barnehage if tilbudt_barnehage else "Ingen"
         })
 
-    return render_template('commit.html', 
+    foresatt_data = forelder.to_dict(orient='records')
+    barn_data = barn.to_dict(orient='records')
+    barnehage_data = barnehage.to_dict(orient='records')
+
+    return render_template('commit.html',
                            foresatt_data=foresatt_data,
                            barn_data=barn_data,
                            barnehage_data=barnehage_data,
-                           soknad_data=soknader_med_info)
+                           soknad_data=soknader_med_data)
+
 
 @app.route('/soknader')
 def soknader():
-    # Henter alle søknader fra databasen
-    alle_soknader = soknad.to_dict(orient='records')
+    # Les oppdatert data fra Excel-filen
+    try:
+        forelder = pd.read_excel('kgdata.xlsx', sheet_name='foresatt', usecols=lambda x: 'Unnamed' not in x)
+        barn = pd.read_excel('kgdata.xlsx', sheet_name='barn', usecols=lambda x: 'Unnamed' not in x)
+        barnehage = pd.read_excel('kgdata.xlsx', sheet_name='barnehage', usecols=lambda x: 'Unnamed' not in x)
+        soknad = pd.read_excel('kgdata.xlsx', sheet_name='soknad', usecols=lambda x: 'Unnamed' not in x)
+    except Exception as e:
+        return f"En feil oppstod under lasting av data fra Excel: {e}", 500
 
-    # Opprett en liste med søknader og deres status
-    soknader_med_status = []
-    for s in alle_soknader:
-        status = "AVSLAG"  # Start med status som AVSLAG
-        # Sørg for at barnehager_prioritert er en streng før split
-        barnehager_prioritert = str(s['barnehager_prioritert'])
+    soknader_med_data = []
+    for _, row in soknad.iterrows():
+        foresatt_1 = forelder.loc[forelder['foresatt_id'] == row['foresatt_1']]
+        foresatt_2 = forelder.loc[forelder['foresatt_id'] == row['foresatt_2']]
+        barn_data = barn.loc[barn['barn_id'] == row['barn_1']]
 
-        # Del opp barnehager_prioritert og filtrer bare gyldige tall
-        prioriterte_barnehager = [int(b_id) for b_id in barnehager_prioritert.split(',') if b_id.isdigit()]
+        har_fortrinnsrett = row['fr_barnevern'] == 'on' or row['fr_sykd_familie'] == 'on' or row['fr_sykd_barn'] == 'on'
 
-        # Sjekk om søkeren har fortrinnsrett
-        har_fortrinnsrett = s['fr_barnevern'] == 'on' or s['fr_sykd_familie'] == 'on' or s['fr_sykd_barn'] == 'on'
+        # Sjekk prioriterte barnehager og finn første med ledig plass
+        status = "AVSLAG"
+        tilbudt_barnehage = None
+        prioriterte_barnehager = str(row['barnehager_prioritert']).split(',')
+        for barnehage_id in prioriterte_barnehager:
+            if barnehage_id.isdigit():
+                barnehage_id = int(barnehage_id)
+                barnehage_data = barnehage.loc[barnehage['barnehage_id'] == barnehage_id]
+                if not barnehage_data.empty:
+                    ledige_plasser = barnehage_data.iloc[0]['barnehage_ledige_plasser']
+                    if har_fortrinnsrett or ledige_plasser > 0:
+                        status = "TILBUD"
+                        tilbudt_barnehage = barnehage_data.iloc[0]['barnehage_navn']
+                        break
 
-        # Sjekk om noen av de prioriterte barnehagene har ledige plasser
-        for b_id in prioriterte_barnehager:
-            barnehage_data = barnehage.loc[barnehage['barnehage_id'] == b_id]
-            if not barnehage_data.empty:
-                ledige_plasser = barnehage_data.iloc[0]['barnehage_ledige_plasser']
-                # Status settes til "TILBUD" bare hvis det er ledige plasser eller fortrinnsrett
-                if har_fortrinnsrett or ledige_plasser > 0:
-                    status = "TILBUD"
-                    break  # Bryt ut av løkken hvis vi finner en gyldig barnehage
-
-        # Hent navnene til foresatte
-        foresatt_1_info = forelder.loc[forelder['foresatt_id'] == s['foresatt_1']]
-        foresatt_1_navn = foresatt_1_info.iloc[0]['foresatt_navn'] if not foresatt_1_info.empty else "Ukjent"
-
-        foresatt_2_info = forelder.loc[forelder['foresatt_id'] == s['foresatt_2']]
-        foresatt_2_navn = foresatt_2_info.iloc[0]['foresatt_navn'] if not foresatt_2_info.empty else "Ukjent"
-
-        # Hent mer informasjon om barnet
-        barn_info = barn.loc[barn['barn_id'] == s['barn_1']]
-        barn_pnr = barn_info.iloc[0]['barn_pnr'] if not barn_info.empty else "Ukjent"
-
-        soknader_med_status.append({
-            'sok_id': s['sok_id'],
-            'foresatt_1': foresatt_1_navn,
-            'foresatt_2': foresatt_2_navn,
-            'barn_1': barn_pnr,
-            'status': status
+        soknader_med_data.append({
+            'sok_id': row['sok_id'],
+            'foresatt_1': foresatt_1['foresatt_navn'].values[0] if not foresatt_1.empty else 'Ukjent',
+            'foresatt_2': foresatt_2['foresatt_navn'].values[0] if not foresatt_2.empty else 'Ukjent',
+            'barn_1': barn_data['barn_pnr'].values[0] if not barn_data.empty else 'Ukjent',
+            'fr_barnevern': row['fr_barnevern'],
+            'fr_sykd_familie': row['fr_sykd_familie'],
+            'fr_sykd_barn': row['fr_sykd_barn'],
+            'fr_annet': row['fr_annet'],
+            'status': status,
+            'tilbudt_barnehage': tilbudt_barnehage if tilbudt_barnehage else "Ingen"
         })
 
-    return render_template('soknader.html', soknader=soknader_med_status)
+    return render_template('soknader.html', soknader=soknader_med_data)
+
+
 """
 Referanser
 [1] https://stackoverflow.com/questions/21668481/difference-between-render-template-and-redirect

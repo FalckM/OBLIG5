@@ -2,10 +2,49 @@
 {% block content %}
 <h2>Svar på Søknaden</h2>
 
+<!-- Hvis brukeren får tilbud -->
 {% if session['tilbudt_plass'] %}
-    <p>Gratulerer! Du har fått plass i en av de prioriterte barnehagene.</p>
+    <p><strong>Gratulerer!</strong> Du har fått plass i barnehagen:</p>
+    <ul>
+        <li><strong>Navn:</strong> {{ session['barnehage_navn'] }}</li>
+        <li><strong>Adresse:</strong> {{ session['barnehage_adresse'] }}</li>
+        <li><strong>Telefon:</strong> {{ session['barnehage_telefon'] }}</li>
+        <li><strong>E-post:</strong> {{ session['barnehage_epost'] }}</li>
+    </ul>
+
+    <h3>Hva skjer nå?</h3>
+    <ul>
+        <li>Ta kontakt med barnehagen på <strong>{{ session['barnehage_epost'] }}</strong> for å bekrefte oppstart.</li>
+        <li>Forbered nødvendige dokumenter for innskrivning.</li>
+        <li>Planlegg overgangsperioden for barnet ditt.</li>
+    </ul>
+
+    <h3>Kontaktinformasjon</h3>
+    <ul>
+        <li>Telefon: 123 456 789</li>
+        <li>E-post: kontakt@barnehager.no</li>
+        <li>Åpningstider: Mandag–Fredag, 08:00–16:00</li>
+    </ul>
+
+<!-- Hvis brukeren får avslag -->
 {% else %}
-    <p>Beklager, vi har ikke ledige plasser i de prioriterte barnehagene for øyeblikket.</p>
+    <p><strong>Beklager!</strong> Vi har ikke ledige plasser i noen av de prioriterte barnehagene for øyeblikket.</p>
+    <p>Du søkte på følgende barnehager:</p>
+    <ul>
+        {% for barnehage in session['sokte_barnehager'] %}
+        <li>{{ barnehage }}</li>
+        {% endfor %}
+    </ul>
+
+    <h3>Hva skjer nå?</h3>
+    <p>Du kan søke igjen i neste opptaksrunde, som starter <strong>1. januar 2025</strong>. Følg med på vår nettside for oppdateringer.</p>
+
+    <h3>Kontaktinformasjon</h3>
+    <ul>
+        <li>Telefon: 987 654 321</li>
+        <li>E-post: support@barnehager.no</li>
+        <li>Åpningstider: Mandag–Fredag, 09:00–17:00</li>
+    </ul>
 {% endif %}
 
 {% endblock %}

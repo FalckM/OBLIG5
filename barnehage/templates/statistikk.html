@@ -5,6 +5,7 @@
 <form method="post">
     <label for="kommune">Velg en kommune:</label>
     <select id="kommune" name="kommune" required>
+        <option value="" disabled {% if not valgt_kommune %}selected{% endif %}>Velg et element fra listen.</option>
         {% for kommune in kommuner %}
             <option value="{{ kommune }}" {% if kommune == valgt_kommune %}selected{% endif %}>
                 {{ kommune }}
@@ -14,12 +15,17 @@
     <button type="submit">Vis statistikk</button>
 </form>
 
-{% if valgt_kommune %}
-    <h3>Statistikk for {{ valgt_kommune }}</h3>
+{% if chart_json %}
+    <h3>Statistikk for {{ valgt_kommune if valgt_kommune else 'topp-10 kommuner' }}</h3>
     <div id="chart"></div>
     <script type="text/javascript">
-        var chart_data = {{ chart_html | safe }};
+        var chart_data = {{ chart_json | safe }};
         vegaEmbed('#chart', chart_data).catch(console.error);
     </script>
 {% endif %}
+
+{% if error %}
+    <p style="color: red;">{{ error }}</p>
+{% endif %}
+
 {% endblock %}

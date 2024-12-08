@@ -1,23 +1,38 @@
 {% extends 'base.html' %}
+
 {% block content %}
-<h2>Oversikt over Søknader</h2>
+<h2>Søknader</h2>
 
 <table border="1">
-    <tr>
-        <th>Søknads-ID</th>
-        <th>Foresatt 1</th>
-        <th>Foresatt 2</th>
-        <th>Barn</th>
-        <th>Status</th>
-    </tr>
-    {% for soknad in soknader %}
-    <tr>
-        <td>{{ soknad.sok_id }}</td>
-        <td>{{ soknad.foresatt_1 }}</td>
-        <td>{{ soknad.foresatt_2 }}</td>
-        <td>{{ soknad.barn_1 }}</td>
-        <td>{{ soknad.status }}</td>
-    </tr>
-    {% endfor %}
+    <thead>
+        <tr>
+            <th>Søknads-ID</th>
+            <th>Navn på Foresatt 1</th>
+            <th>Navn på Foresatt 2</th>
+            <th>Personnummer på Barn</th>
+            <th>Fortrinnsrett</th>
+            <th>Status</th>
+            <th>Tilbudt Barnehage</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for soknad in soknader %}
+        <tr>
+            <td>{{ soknad.sok_id }}</td>
+            <td>{{ soknad.foresatt_1 }}</td>
+            <td>{{ soknad.foresatt_2 }}</td>
+            <td>{{ soknad.barn_1 }}</td>
+            <td>
+                {% if soknad.fr_barnevern == 'on' %} Barnevern {% endif %}
+                {% if soknad.fr_sykd_familie == 'on' %} Sykdom i Familie {% endif %}
+                {% if soknad.fr_sykd_barn == 'on' %} Sykdom på Barn {% endif %}
+                {% if soknad.fr_annet == 'on' %} Annet {% endif %}
+            </td>
+            <td>{{ soknad.status }}</td>
+            <td>{{ soknad.tilbudt_barnehage }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
 </table>
+
 {% endblock %}
